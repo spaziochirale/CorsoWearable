@@ -5,7 +5,7 @@
  * Ver: 1.0
  * Title: Esempio di gestione del fotoresistore
  * 
- * Circuit: Board Adafruit Flora con fotoresistore e partitore
+ * Circuit: Board Adafruit Flora con fotoresistore collegato nel partitore di tensione
  * 
  */
 

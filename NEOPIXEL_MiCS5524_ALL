@@ -1,0 +1,94 @@
+#include <Adafruit_NeoPixel.h>
+#include "DFRobot_MICS.h"
+
+#ifdef __AVR__
+  #include <avr/power.h>
+#endif
+
+#define NEOPIXEL_PIN      6     // Pin di controllo dei Neopixel
+#define NUMPIXELS         2     // Numero di LED Neopixel
+#define SENSOR_ADC_PIN    A11   // Pin analogico per la lettura del sensore
+#define SENSOR_POWER_PIN  9     // Pin digitale per attivare/disattivare il sensore
+#define CALIBRATION_TIME  2     // Tempo di calibrazione in minuti
+
+// Inizializza il sensore DFRobot MICS
+DFRobot_MICS_ADC mics(SENSOR_ADC_PIN, SENSOR_POWER_PIN);
+
+// Inizializza la striscia Neopixel
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
+
+void setup() {
+  Serial.begin(115200);
+  pixels.begin();        // Avvia Neopixel
+  pixels.show();         // Spegne i LED inizialmente
+
+  // Avvio del sensore MICS5524
+  Serial.println("Inizializzazione del sensore...");
+
+  while (!mics.begin()) {
+    Serial.println("Errore: sensore non rilevato! Controllare i collegamenti.");
+    delay(1000);
+  }
+  Serial.println("Sensore rilevato con successo!");
+
+  // Verifica stato del sensore e attivazione se necessario
+  uint8_t mode = mics.getPowerState();
+  if (mode == SLEEP_MODE) {
+    mics.wakeUpMode();
+    Serial.println("Sensore riattivato!");
+  } else {
+    Serial.println("Sensore già attivo.");
+  }
+
+  // Attendere il completamento della calibrazione
+  while (!mics.warmUpTime(CALIBRATION_TIME)) {
+    Serial.println("Attendere il completamento della calibrazione...");
+    delay(1000);
+  }
+  Serial.println("Calibrazione completata. Sensore pronto.");
+}
+
+void loop() {
+  // Lettura di tutti i gas rilevati dal sensore
+  float coConcentration   = mics.getGasData(CO);
+  float ch4Concentration  = mics.getGasData(CH4);
+  float c2h5ohConcentration = mics.getGasData(C2H5OH);
+  float h2Concentration   = mics.getGasData(H2);
+  float nh3Concentration  = mics.getGasData(NH3);
+  
+  // Mostrare i valori sul monitor seriale
+  Serial.print("CO: "); Serial.print(coConcentration, 1); Serial.print(" ppm | ");
+  Serial.print("CH4: "); Serial.print(ch4Concentration, 1); Serial.print(" ppm | ");
+  Serial.print("Ethanol: "); Serial.print(c2h5ohConcentration, 1); Serial.print(" ppm | ");
+  Serial.print("H2: "); Serial.print(h2Concentration, 1); Serial.print(" ppm | ");
+  Serial.print("NH3: "); Serial.print(nh3Concentration, 1); Serial.println(" ppm");
+
+  // Calcolare il valore massimo tra i gas
+  float maxGas = max(coConcentration, max(ch4Concentration, max(c2h5ohConcentration, max(h2Concentration, nh3Concentration))));
+
+  // Impostare colori in base alla concentrazione generale dei gas
+  int red, green, blue;
+
+  if (maxGas <= 10) {  
+    red = 180; green = 80; blue = 10; // Bianco tenue (aria pulita)
+  } 
+  else if (maxGas > 10 && maxGas <= 100) {  
+    red = 255; green = 50; blue = 0; // Giallo caldo (moderata contaminazione)
+  } 
+  else if (maxGas > 100 && maxGas <= 500) {  
+    red = 255; green = 10; blue = 0; // Arancione intenso (aria molto inquinata)
+  }
+  else {  
+    red = 255; green = 0; blue = 0; // Rosso (alto rischio di tossicità)
+  }
+
+  // Imposta il colore sui LED
+  for (int i = 0; i < NUMPIXELS; i++) {
+    pixels.setPixelColor(i, pixels.Color(red, green, blue));
+  }
+
+  pixels.show();  // Aggiorna i LED
+
+  delay(2000); // Attesa per la prossima lettura
+}
+ 

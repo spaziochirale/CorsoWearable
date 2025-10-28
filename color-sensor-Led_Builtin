@@ -1,0 +1,127 @@
+#include <Wire.h>
+#include "Adafruit_TCS34725.h"
+#include <Adafruit_NeoPixel.h>
+
+/*
+  Flora + TCS34725 -> NeoPixel onboard (D8)
+  - Una sola lettura all'avvio, poi colore fisso finché non premi RESET.
+  - Countdown visivo per posizionare il campione.
+  - Luminosità 155 e correzione gamma stile PhilB.
+  - Miglior fedeltà colore: normalizzazione su "clear" (C) invece che su R+G+B.
+  - Avvio più robusto: micro-ritardo all’inizio per stabilizzare il sensore.
+*/
+
+// ===================== CONFIG NEOPIXEL =====================
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(1, 8, NEO_GRB + NEO_KHZ800);
+
+// ===================== TABELLA GAMMA =======================
+byte gammatable[256];
+
+// ===================== CONFIG SENSORE ======================
+Adafruit_TCS34725 tcs(
+  TCS34725_INTEGRATIONTIME_50MS,  // 50 ms di integrazione
+  TCS34725_GAIN_4X                // guadagno 4x
+);
+
+void setup() {
+  // Micro-ritardo per dare tempo a sensore e alimentazione di stabilizzarsi
+  delay(80);
+
+  Serial.begin(9600);
+  Serial.println("Color View Test!");
+
+  // ---- NeoPixel ----
+  strip.begin();
+  strip.setBrightness(155);   // luminosità richiesta (0..255)
+  strip.show();               // spegne il pixel all'avvio
+
+  // ---- Sensore colore ----
+  if (tcs.begin()) {
+    Serial.println("Found sensor");
+  } else {
+    Serial.println("No TCS34725 found ... check your connections");
+    while (1); // blocca se non trova il sensore
+  }
+
+  // ---- Costruzione tabella gamma (stile PhilB) ----
+  for (int i = 0; i < 256; i++) {
+    float x = i / 255.0f;
+    x = pow(x, 2.5f);
+    x *= 255.0f;
+    if (x < 0)   x = 0;
+    if (x > 255) x = 255;
+    gammatable[i] = (byte)(x + 0.5f);
+  }
+
+  // ---- Countdown visivo (3 lampeggi bianchi tenui) ----
+  for (int i = 0; i < 3; i++) {
+    strip.setPixelColor(0, strip.Color(188, 188, 188)); // bianco percepito (RGB uguali)
+    strip.show();
+    delay(1000);
+    strip.setPixelColor(0, strip.Color(0, 0, 0));
+    strip.show();
+    delay(500);
+  }
+
+  // ---- Lettura singola ----
+  uint16_t clear, red, green, blue;
+
+  // Su molte breakout: setInterrupt(false) accende il LED bianco integrato (se presente)
+  tcs.setInterrupt(false);   // LED sensore ON (se supportato)
+  delay(60);                 // > 50ms (tempo di integrazione scelto)
+  tcs.getRawData(&red, &green, &blue, &clear);
+  tcs.setInterrupt(true);    // LED sensore OFF
+
+  // Debug
+  Serial.print("C:\t"); Serial.print(clear);
+  Serial.print("\tR:\t"); Serial.print(red);
+  Serial.print("\tG:\t"); Serial.print(green);
+  Serial.print("\tB:\t"); Serial.println(blue);
+
+  // ---- Normalizzazione su "clear" (C) per fedeltà colore ----
+  if (clear == 0) clear = 1;   // evita divisione per zero
+
+  // Rapporto di ciascun canale rispetto alla luce totale rilevata (clear)
+  float rf = (float)red   / (float)clear;
+  float gf = (float)green / (float)clear;
+  float bf = (float)blue  / (float)clear;
+
+  // Porta in 0..255 con clamp
+  int r = (int)(rf * 255.0f + 0.5f);
+  int g = (int)(gf * 255.0f + 0.5f);
+  int b = (int)(bf * 255.0f + 0.5f);
+  if (r < 0) r = 0; if (r > 255) r = 255;
+  if (g < 0) g = 0; if (g > 255) g = 255;
+  if (b < 0) b = 0; if (b > 255) b = 255;
+
+  // Stampa anche i normalizzati
+  Serial.print("Norm RGB:\t");
+  Serial.print(r); Serial.print(" ");
+  Serial.print(g); Serial.print(" ");
+  Serial.println(b);
+
+  // HEX come nel tuo codice
+  Serial.print("\tHEX:\t");
+  Serial.print(r, HEX); Serial.print(g, HEX); Serial.println(b, HEX);
+
+  // ---- Correzione gamma ----
+  uint8_t rr = gammatable[r];
+  uint8_t gg = gammatable[g];
+  uint8_t bb = gammatable[b];
+
+  // ---- Visualizzazione sul NeoPixel onboard ----
+  colorWipe(strip.Color(rr, gg, bb), 0);
+}
+
+// Come nel tuo: con 1 LED imposta e mostra subito il colore
+void colorWipe(uint32_t c, uint8_t wait) {
+  for (uint16_t i = 0; i < strip.numPixels(); i++) {
+    strip.setPixelColor(i, c);
+    strip.show();
+    delay(wait);
+  }
+}
+
+void loop() {
+  // Vuoto: nuova lettura solo premendo RESET
+}

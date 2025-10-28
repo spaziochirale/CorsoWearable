@@ -1,0 +1,52 @@
+#include <Adafruit_NeoPixel.h>
+
+#define NEOPIXEL_PIN   6
+#define NUM_PIXELS     2
+#define LACCETTO_PIN   A10
+#define RAW_MIN        100
+#define RAW_MAX        1023
+#define BRIGHT_MIN     0
+#define BRIGHT_MAX     255
+#define THRESHOLD_2LED 140
+
+Adafruit_NeoPixel strip(NUM_PIXELS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
+
+int laccetto;
+int luminosita;
+
+void setup() {
+  Serial.begin(9600);
+  strip.begin();
+  strip.show();
+  strip.setBrightness(255);
+}
+
+void loop() {
+  laccetto = analogRead(LACCETTO_PIN);
+  
+  // Invertiamo la mappatura: tiro forte → luminosità alta
+  luminosita = map(laccetto, RAW_MAX, RAW_MIN, BRIGHT_MIN, BRIGHT_MAX);
+  
+  if (luminosita < BRIGHT_MIN) luminosita = BRIGHT_MIN;
+  if (luminosita > BRIGHT_MAX) luminosita = BRIGHT_MAX;
+
+  Serial.print("Laccetto -> ");
+  Serial.print(laccetto);
+  Serial.print("   luminosita -> ");
+  Serial.println(luminosita);
+
+  uint32_t col = strip.Color(luminosita, luminosita, luminosita);
+
+  // Primo LED sempre proporzionale
+  strip.setPixelColor(0, col);
+
+  // Secondo LED sopra la soglia
+  if (luminosita >= THRESHOLD_2LED) {
+    strip.setPixelColor(1, col);
+  } else {
+    strip.setPixelColor(1, 0, 0, 0);
+  }
+
+  strip.show();
+  delay(100);
+}
